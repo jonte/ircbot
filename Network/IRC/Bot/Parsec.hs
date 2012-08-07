@@ -32,7 +32,6 @@ This is good, unless multiple plugins wanted to depend on some common background
 
 import Control.Applicative ((<$>))
 import Control.Monad
-import Control.Monad.Reader (MonadReader, ask)
 import Control.Monad.Trans
 import Data.Char (digitToInt)
 import Data.List (intercalate, isPrefixOf, nub)
@@ -48,9 +47,9 @@ instance (BotMonad m, Monad m) => BotMonad (ParsecT s u m) where
     askBotEnv        = lift askBotEnv
     askMessage       = lift askMessage
     askOutChan       = lift askOutChan
-    localMessage f m = mapParsecT (localMessage f) m
+    localMessage f   = mapParsecT (localMessage f) 
     sendMessage      = lift . sendMessage
-    logM lvl msg     = lift (logM lvl msg)
+    logM lvl m       = lift (logM lvl m)
     whoami           = lift whoami
 
 mapParsecT :: (Monad m, Monad n) => (m (Consumed (m (Reply s u a))) -> n (Consumed (n (Reply s u b)))) -> ParsecT s u m a -> ParsecT s u n b
@@ -68,8 +67,8 @@ botPrefix =
     do recv <- fromMaybe "" <$> askReceiver
        pref <- cmdPrefix <$> askBotEnv
        if "#" `isPrefixOf` recv
-          then (try $ string pref >> return ()) <|> lift mzero
-          else (try $ string pref >> return ()) <|> return ()
+          then void (string pref) <|> lift mzero
+          else void (string pref) <|> return ()
 
 -- | create a bot part by using Parsec to parse the command
 --
@@ -81,7 +80,7 @@ botPrefix =
 --
 -- see 'dicePart' for an example usage.
 parsecPart :: (BotMonad m) =>
-              (ParsecT String () m a)
+              ParsecT String () m a
            -> m a
 parsecPart p =
     do priv <- privMsg
@@ -105,12 +104,12 @@ showErrorMessages ::
     String -> String -> String -> String -> String -> [P.Message] -> [String]
 showErrorMessages msgOr msgUnknown msgExpecting msgUnExpected msgEndOfInput msgs
     | null msgs = [msgUnknown]
-    | otherwise = clean $
+    | otherwise = clean
                  [showSysUnExpect,showUnExpect,showExpect,showMessages]
     where
-      (sysUnExpect,msgs1) = span ((P.SysUnExpect "") ==) msgs
-      (unExpect,msgs2)    = span ((P.UnExpect    "") ==) msgs1
-      (expect,messages)   = span ((P.Expect      "") ==) msgs2
+      (sysUnExpect,msgs1) = span (P.SysUnExpect "" ==) msgs
+      (unExpect,msgs2)    = span (P.UnExpect    "" ==) msgs1
+      (expect,messages)   = span (P.Expect      "" ==) msgs2
 
       showExpect      = showMany msgExpecting expect
       showUnExpect    = showMany msgUnExpected unExpect
@@ -124,10 +123,10 @@ showErrorMessages msgOr msgUnknown msgExpecting msgUnExpected msgEndOfInput msgs
       showMessages      = showMany "" messages
 
       -- helpers
-      showMany pre msgs = case clean (map messageString msgs) of
+      showMany pre ms   = case clean (map messageString ms) of
                             [] -> ""
-                            ms | null pre  -> commasOr ms
-                               | otherwise -> pre ++ " " ++ commasOr ms
+                            ms' | null pre  -> commasOr ms'
+                                | otherwise -> pre ++ " " ++ commasOr ms'
 
       commasOr []       = ""
       commasOr [m]      = m
