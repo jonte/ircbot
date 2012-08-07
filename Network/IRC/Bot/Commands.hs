@@ -5,7 +5,7 @@ import Control.Applicative
 import Control.Monad
 import Data.Data
 import Data.List (isPrefixOf)
-import Network (HostName, PortID(PortNumber))
+import Network (HostName)
 import Network.IRC
 import Network.IRC.Bot.BotMonad
 
@@ -13,10 +13,8 @@ import Network.IRC.Bot.BotMonad
 
 cmd :: (Functor m, MonadPlus m, BotMonad m) => Command -> m ()
 cmd cmdName =
-  do command <- msg_command <$> askMessage
-     if cmdName == command
-       then return ()
-       else mzero
+  do c <- msg_command <$> askMessage
+     unless (cmdName == c) mzero
 
 data Ping
   = Ping HostName
@@ -32,7 +30,7 @@ ping =
 
 
 data PrivMsg
-  = PrivMsg { prefix     :: (Maybe Prefix)
+  = PrivMsg { prefix     :: Maybe Prefix
             , receivers  :: [String]
             , msg        :: String
             }
@@ -40,16 +38,16 @@ data PrivMsg
 
 privMsg :: (Functor m, MonadPlus m, BotMonad m) => m PrivMsg
 privMsg =
-  do msg <- askMessage
-     maybe mzero return (toPrivMsg msg)
+  do m <- askMessage
+     maybe mzero return (toPrivMsg m)
 
 toPrivMsg :: Message -> Maybe PrivMsg
-toPrivMsg msg =
-  let cmd    = msg_command msg
-      params = msg_params  msg
-      prefix = msg_prefix  msg
-  in case cmd of
-      "PRIVMSG" -> Just $ PrivMsg prefix (init params) (last params)
+toPrivMsg m =
+  let c      = msg_command m
+      params = msg_params  m
+      pref   = msg_prefix  m
+  in case c of
+      "PRIVMSG" -> Just $ PrivMsg pref   (init params) (last params)
       _         -> Nothing
 
 class ToMessage a where
@@ -66,15 +64,15 @@ instance ToMessage Pong where
     toMessage (Pong hostName) = Message Nothing "PONG" [hostName]
 
 instance ToMessage PrivMsg where
-    toMessage (PrivMsg prefix receivers msg) = Message prefix "PRIVMSG" (receivers ++ [msg])
+    toMessage (PrivMsg pref recvs m) = Message pref "PRIVMSG" (recvs ++ [m])
 
 
 -- | get the nickname of the user who sent the message
 askSenderNickName :: (BotMonad m) => m (Maybe String)
 askSenderNickName =
-    do msg <- askMessage
-       case msg_prefix msg of
-         (Just (NickName nick _ _)) -> return (Just nick)
+    do m <- askMessage
+       case msg_prefix m of
+         (Just (NickName n _ _)) -> return (Just n)
          _ -> return Nothing
 
 -- | figure out who to reply to for a given `Message`
@@ -84,7 +82,7 @@ replyTo :: (BotMonad m) => m (Maybe String)
 replyTo =
     do priv <- privMsg
        let receiver = head (receivers priv)
-       if ("#" `isPrefixOf` receiver)
+       if "#" `isPrefixOf` receiver
           then return (Just receiver)
           else askSenderNickName
 
@@ -95,6 +93,5 @@ askReceiver :: (Alternative m, BotMonad m) => m (Maybe String)
 askReceiver =
     do priv <- privMsg
        return (Just (head $ receivers priv))
-    <|>
-    do return Nothing
+    <|> return Nothing
 
